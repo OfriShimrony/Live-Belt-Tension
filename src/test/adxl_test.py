@@ -18,8 +18,10 @@ import json
 import time
 import sys
 
-# Klipper API socket path (default location)
-SOCKET_PATH = "/tmp/klippy_uds"
+# Klipper API socket path
+# This is the typical path for MainsailOS/FluiddPI installations
+import os
+SOCKET_PATH = os.path.expanduser("~/printer_data/comms/klippy.sock")
 
 def connect_to_klipper():
     """Connect to Klipper via Unix socket"""
@@ -33,32 +35,54 @@ def connect_to_klipper():
         print(f"  Make sure Klipper is running and socket exists at: {SOCKET_PATH}")
         sys.exit(1)
 
-def send_command(sock, command):
-    """Send a command to Klipper and get response"""
+def send_command(sock, command, wait_for_output=False):
+    """Send a G-code command to Klipper and get response"""
     try:
-        # Format command as JSON
-        cmd_dict = {"id": int(time.time() * 1000), "method": command}
-        cmd_json = json.dumps(cmd_dict) + "\n"
+        # Format as a G-code command for Klipper
+        cmd_dict = {
+            "id": int(time.time() * 1000), 
+            "method": "gcode/script",
+            "params": {"script": command}
+        }
+        cmd_json = json.dumps(cmd_dict) + "\x03"
         
         # Send command
         sock.sendall(cmd_json.encode())
         
-        # Receive response (with timeout)
+        # Receive response
         sock.settimeout(5.0)
         response = b""
+        
+        # Read the command response
         while True:
             chunk = sock.recv(4096)
             if not chunk:
                 break
             response += chunk
-            if b'\n' in chunk:  # Response complete
+            if b'\x03' in chunk:
                 break
         
         # Parse JSON response
-        response_str = response.decode().strip()
+        response_str = response.decode().strip('\x03').strip()
+        result = None
         if response_str:
-            return json.loads(response_str)
-        return None
+            result = json.loads(response_str)
+        
+        # If we need to wait for console output, read additional messages
+        if wait_for_output:
+            time.sleep(0.2)  # Give Klipper time to process
+            sock.settimeout(1.0)
+            try:
+                while True:
+                    chunk = sock.recv(4096)
+                    if chunk:
+                        msg = chunk.decode().strip('\x03').strip()
+                        if msg:
+                            print(f"Console output: {msg}")
+            except socket.timeout:
+                pass  # No more output
+        
+        return result
         
     except socket.timeout:
         print("✗ Command timeout - no response from Klipper")
@@ -70,12 +94,12 @@ def send_command(sock, command):
 def query_accelerometer(sock):
     """Query current accelerometer values"""
     print("\n--- Querying ADXL345 ---")
-    response = send_command(sock, "ACCELEROMETER_QUERY")
+    response = send_command(sock, "ACCELEROMETER_QUERY", wait_for_output=True)
     
     if response and "result" in response:
         print(f"Response: {response['result']}")
     else:
-        print(f"Raw response: {response}")
+        print(f"Command accepted: {response}")
     
     return response
 
