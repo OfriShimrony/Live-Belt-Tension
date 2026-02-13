@@ -269,6 +269,36 @@ class BeltTunerWeb:
             font-size: 1.5em;
             font-weight: bold;
         }
+        .target-input {
+            background: rgba(0, 0, 0, 0.2);
+            padding: 20px;
+            border-radius: 10px;
+            margin-top: 20px;
+        }
+        .target-input label {
+            display: block;
+            font-size: 1.1em;
+            margin-bottom: 10px;
+        }
+        .target-input input {
+            width: 100%;
+            padding: 10px;
+            font-size: 1.5em;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            text-align: center;
+        }
+        .target-input input:focus {
+            outline: none;
+            border-color: rgba(255, 255, 255, 0.6);
+        }
+        .tolerance-info {
+            font-size: 0.9em;
+            opacity: 0.8;
+            margin-top: 10px;
+        }
     </style>
 </head>
 <body>
@@ -287,6 +317,12 @@ class BeltTunerWeb:
         </div>
         
         <div class="card">
+            <div class="target-input">
+                <label>Target Frequency</label>
+                <input type="number" id="targetFreq" value="110" min="50" max="200" step="0.1" onchange="updateTarget()">
+                <div class="tolerance-info">± 5 Hz tolerance</div>
+            </div>
+            
             <div class="controls">
                 <button id="startBtn" onclick="startMeasurement()">▶ Start</button>
                 <button id="stopBtn" onclick="stopMeasurement()" style="display:none;">⏸ Stop</button>
@@ -294,12 +330,12 @@ class BeltTunerWeb:
             
             <div class="info">
                 <div class="info-item">
-                    <label>Target Range</label>
-                    <value>100-140 Hz</value>
+                    <label>Target</label>
+                    <value id="targetDisplay">110 Hz</value>
                 </div>
                 <div class="info-item">
-                    <label>Status</label>
-                    <value id="statusText">Idle</value>
+                    <label>Deviation</label>
+                    <value id="deviation">-- Hz</value>
                 </div>
             </div>
         </div>
@@ -308,12 +344,20 @@ class BeltTunerWeb:
     <script>
         let measuring = false;
         let updateInterval = null;
+        let targetFreq = 110;
+        let tolerance = 5;
         const canvas = document.getElementById('gauge');
         const ctx = canvas.getContext('2d');
         
         // Set canvas size
         canvas.width = canvas.offsetWidth;
         canvas.height = canvas.offsetHeight;
+        
+        function updateTarget() {
+            targetFreq = parseFloat(document.getElementById('targetFreq').value);
+            document.getElementById('targetDisplay').textContent = targetFreq.toFixed(1) + ' Hz';
+            drawGauge(parseFloat(document.getElementById('frequency').textContent) || 0);
+        }
         
         function drawGauge(frequency) {
             const width = canvas.width;
@@ -331,13 +375,32 @@ class BeltTunerWeb:
             ctx.lineWidth = 30;
             ctx.stroke();
             
-            // Target zone (100-140 Hz) - green
-            const minAngle = Math.PI + (Math.PI * (100 - 50) / 150);
-            const maxAngle = Math.PI + (Math.PI * (140 - 50) / 150);
+            // Target zone (target ± tolerance) - green
+            const minTarget = targetFreq - tolerance;
+            const maxTarget = targetFreq + tolerance;
+            const minAngle = Math.PI + (Math.PI * (minTarget - 50) / 150);
+            const maxAngle = Math.PI + (Math.PI * (maxTarget - 50) / 150);
             ctx.beginPath();
             ctx.arc(centerX, centerY, radius, minAngle, maxAngle);
             ctx.strokeStyle = 'rgba(76, 175, 80, 0.5)';
             ctx.lineWidth = 30;
+            ctx.stroke();
+            
+            // Target line (exact target)
+            const targetAngle = Math.PI + (Math.PI * (targetFreq - 50) / 150);
+            const targetLineStart = radius - 35;
+            const targetLineEnd = radius - 5;
+            ctx.beginPath();
+            ctx.moveTo(
+                centerX + targetLineStart * Math.cos(targetAngle),
+                centerY + targetLineStart * Math.sin(targetAngle)
+            );
+            ctx.lineTo(
+                centerX + targetLineEnd * Math.cos(targetAngle),
+                centerY + targetLineEnd * Math.sin(targetAngle)
+            );
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+            ctx.lineWidth = 3;
             ctx.stroke();
             
             // Current value needle
@@ -383,22 +446,27 @@ class BeltTunerWeb:
                     document.getElementById('frequency').textContent = data.frequency.toFixed(1) + ' Hz';
                     drawGauge(data.frequency);
                     
+                    // Calculate deviation
+                    const deviation = data.frequency - targetFreq;
+                    const deviationEl = document.getElementById('deviation');
+                    if (deviation > 0) {
+                        deviationEl.textContent = '+' + deviation.toFixed(1) + ' Hz';
+                    } else {
+                        deviationEl.textContent = deviation.toFixed(1) + ' Hz';
+                    }
+                    
                     // Update status
                     const statusEl = document.getElementById('status');
-                    const statusTextEl = document.getElementById('statusText');
                     
-                    if (data.frequency < 100) {
-                        statusEl.className = 'status loose';
-                        statusEl.textContent = '⬇️ TOO LOOSE - Tighten belt';
-                        statusTextEl.textContent = 'Too Loose';
-                    } else if (data.frequency > 140) {
-                        statusEl.className = 'status tight';
-                        statusEl.textContent = '⬆️ TOO TIGHT - Loosen belt';
-                        statusTextEl.textContent = 'Too Tight';
-                    } else {
+                    if (Math.abs(deviation) <= tolerance) {
                         statusEl.className = 'status good';
-                        statusEl.textContent = '✓ GOOD TENSION';
-                        statusTextEl.textContent = 'Good';
+                        statusEl.textContent = '✓ ON TARGET';
+                    } else if (deviation < -tolerance) {
+                        statusEl.className = 'status loose';
+                        statusEl.textContent = '⬇️ TOO LOOSE - Tighten belt (' + Math.abs(deviation).toFixed(1) + ' Hz low)';
+                    } else {
+                        statusEl.className = 'status tight';
+                        statusEl.textContent = '⬆️ TOO TIGHT - Loosen belt (' + deviation.toFixed(1) + ' Hz high)';
                     }
                 }
             } catch (error) {
@@ -427,7 +495,6 @@ class BeltTunerWeb:
                 document.getElementById('stopBtn').style.display = 'none';
                 document.getElementById('status').textContent = 'Stopped';
                 document.getElementById('status').className = 'status idle';
-                document.getElementById('statusText').textContent = 'Idle';
                 
                 if (updateInterval) {
                     clearInterval(updateInterval);
