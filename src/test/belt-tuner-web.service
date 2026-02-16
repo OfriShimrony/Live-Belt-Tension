@@ -1,0 +1,15 @@
+[Unit]
+Description=Live Belt Tuner Web Server
+After=network.target moonraker.service klipper.service
+Wants=moonraker.service
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/Live-Belt-Tension/src
+ExecStart=/usr/bin/python3 /home/pi/Live-Belt-Tension/src/belt_tuner_web.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
