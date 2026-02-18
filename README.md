@@ -1,77 +1,90 @@
 # Live Belt Tension Tuner for Klipper
 
-A real-time belt tension measurement tool for Klipper-based 3D printers that provides live feedback during belt adjustment.
+Belt frequency measurement tool for CoreXY 3D printers. Works like a guitar tuner — physically pluck your belt, get the frequency instantly. Uses the ADXL345 accelerometer already on your printer.
 
-## Overview
+## Installation
 
-This project aims to create a live belt tension tuner that works like a guitar tuner - providing continuous, real-time frequency feedback as you physically adjust your printer's belt tensioners. Unlike existing solutions that require iterative test-adjust-retest cycles, this tool will show you the belt frequency in real-time.
+SSH into your printer and run:
 
-## Features (Planned)
+```bash
+wget -O - https://raw.githubusercontent.com/OfriShimrony/Live-Belt-Tension/main/install.sh | bash
+```
 
-- **Real-time frequency display**: See belt resonant frequency update live as you adjust
-- **Visual target zones**: Clear indication of proper tension ranges
-- **A/B belt comparison**: For CoreXY systems, compare both belts simultaneously
-- **Web interface**: Integration with Mainsail/Fluidd
-- **Multi-printer support**: Tested on Voron V0, V2.4, and Trident
+Then add to your `printer.cfg`:
 
-## How It Works
+```ini
+[include belt_tuner_macros.cfg]
+```
 
-The tool extends Klipper's existing ADXL345 accelerometer support to provide continuous streaming of vibration data. Real-time FFT (Fast Fourier Transform) analysis extracts the dominant frequency, which corresponds to belt tension.
+And restart Klipper:
 
-## Project Status
-
-🚧 **Early Development** - Currently in Phase 1: Research & Design
+```bash
+sudo systemctl restart klipper
+```
 
 ## Requirements
 
-- Klipper-based 3D printer (CoreXY, Cartesian, or Delta)
-- ADXL345 accelerometer (already installed for input shaping)
-- Raspberry Pi or similar host running Klipper
-- Python 3 with NumPy/SciPy
+- Klipper with Moonraker
+- ADXL345 accelerometer configured for input shaping
+- `gcode_shell_command` extension (install via [KIAUH](https://github.com/dw-0/kiauh))
+- Python 3 with `numpy` and `scipy` (installed automatically)
 
-## Development Roadmap
+> **No `gcode_shell_command`?** Use `belt_tuner_macros_simple.cfg` instead — it captures data and you analyze manually via SSH.
 
-### Phase 1: Research & Design (Current)
-- Study Klipper's ADXL345 implementation
-- Design system architecture
-- Create technical specification
+## Usage
 
-### Phase 2: Prototype Data Collection
-- Extend Klipper's adxl345.py module for streaming mode
-- Implement Python-side buffer management
+From the Klipper console (Mainsail / Fluidd):
 
-### Phase 3: FFT Processing Engine
-- Real-time frequency analysis
-- Peak detection and noise filtering
+```
+BELT_TUNE BELT=A       # Measure Belt A (3 plucks, averaged)
+BELT_TUNE BELT=B       # Measure Belt B
+BELT_COMPARE           # Measure and compare both belts
+```
 
-### Phase 4: User Interface
-- Web-based display with live updates
-- Visual frequency indicators
+When prompted, pluck the belt like a guitar string. The tool detects the snap automatically and reports the frequency.
 
-### Phase 5: Testing & Validation
-- Test across multiple printer configurations
-- Refine and optimize
+### KlipperScreen Panel (optional)
 
-### Phase 6: Documentation & Release
-- Complete user documentation
-- Community release
+If you have KlipperScreen, the installer will add a touch-friendly panel automatically. Add it to your KlipperScreen config:
 
-## Contributing
+```ini
+[menu __main belt_tuner]
+name: Belt Tuner
+panel: belt_tuner_panel
+```
 
-This project is in early development. Contributions, suggestions, and testing help will be welcome once we reach a more stable state.
+Then restart KlipperScreen:
+
+```bash
+sudo systemctl restart KlipperScreen
+```
+
+## How It Works
+
+1. The ADXL345 records acceleration data while you pluck the belt
+2. The analyzer finds the peak impact and extracts 1 second of decay
+3. A notch filter removes the 176 Hz structural resonance
+4. Welch PSD + zero-padded FFT with parabolic interpolation gives sub-Hz accuracy
+5. Results are reported with a confidence rating (EXCELLENT / HIGH / GOOD / LOW)
+
+**Target frequencies** for a well-tuned CoreXY:
+- Belt A vs Belt B delta < 2 Hz: EXCELLENT
+- < 5 Hz: GOOD
+- < 10 Hz: FAIR
+- ≥ 10 Hz: POOR — adjust tension
+
+## Troubleshooting
+
+**"Insufficient data after trigger"** — Recording too short. Check `timeout` in the macro's `gcode_shell_command`.
+
+**LOW confidence** — Pluck harder, or check that the ADXL345 is rigidly mounted.
+
+**Inconsistent results** — Always pluck at the same location. Position the toolhead at bed center before measuring.
 
 ## License
 
-TBD
+MIT
 
 ## Author
 
-Ofri Shimrony
-
-## Inspiration
-
-This project was inspired by the Klipper community's long-standing desire for live belt tension monitoring (discussed since 2022) and Prusa's recent belt tension feature.
-
----
-
-*Last updated: February 2026*
+Ofri Shimrony — inspired by the Klipper community and Prusa's belt tension feature.
