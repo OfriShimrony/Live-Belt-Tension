@@ -1,0 +1,66 @@
+/* Belt Tuner Panel Styles for KlipperScreen */
+
+/* Measurement boxes - Good quality (green) */
+.measurement-good {
+    background-color: #2E7D32;
+    border: 2px solid #4CAF50;
+    border-radius: 10px;
+}
+
+/* Measurement boxes - Fair quality (yellow) */
+.measurement-fair {
+    background-color: #F57C00;
+    border: 2px solid #FF9800;
+    border-radius: 10px;
+}
+
+/* Measurement boxes - Poor quality (red) */
+.measurement-poor {
+    background-color: #C62828;
+    border: 2px solid #F44336;
+    border-radius: 10px;
+}
+
+/* Measurement boxes - Old measurements (faded) */
+.measurement-old {
+    background-color: #424242;
+    border: 2px solid #616161;
+    border-radius: 10px;
+    opacity: 0.6;
+}
+
+/* Labels inside measurement boxes */
+#measurement-freq-0, #measurement-freq-1, #measurement-freq-2, 
+#measurement-freq-3, #measurement-freq-4 {
+    color: white;
+    font-weight: bold;
+}
+
+#measurement-unit-0, #measurement-unit-1, #measurement-unit-2,
+#measurement-unit-3, #measurement-unit-4 {
+    color: #CCCCCC;
+    font-size: 12px;
+}
+
+#measurement-quality-0, #measurement-quality-1, #measurement-quality-2,
+#measurement-quality-3, #measurement-quality-4 {
+    color: white;
+    font-size: 16px;
+}
+
+/* Belt selection label */
+#belt-tuner-label {
+    font-size: 18px;
+    font-weight: bold;
+}
+
+/* Status label */
+#belt-tuner-status {
+    font-size: 24px;
+    min-height: 80px;
+}
+
+/* Average label */
+#belt-tuner-average {
+    font-size: 18px;
+}
