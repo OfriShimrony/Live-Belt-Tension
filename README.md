@@ -13,7 +13,7 @@ wget -O - https://raw.githubusercontent.com/OfriShimrony/Live-Belt-Tension/main/
 Then add to your `printer.cfg`:
 
 ```ini
-[include belt_tuner_macros.cfg]
+[include belt_tuner_macros_simple.cfg]
 ```
 
 And restart Klipper:
@@ -26,10 +26,7 @@ sudo systemctl restart klipper
 
 - Klipper with Moonraker
 - ADXL345 accelerometer configured for input shaping
-- `gcode_shell_command` extension (install via [KIAUH](https://github.com/dw-0/kiauh))
 - Python 3 with `numpy` and `scipy` (installed automatically)
-
-> **No `gcode_shell_command`?** Use `belt_tuner_macros_simple.cfg` instead — it captures data and you analyze manually via SSH.
 
 ## Usage
 

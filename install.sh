@@ -104,12 +104,10 @@ install_macros() {
         return
     fi
 
-    cp "${BELT_TUNER_PATH}/gcode/belt_tuner_macros.cfg" "${KLIPPER_CONFIG_PATH}/"
     cp "${BELT_TUNER_PATH}/gcode/belt_tuner_macros_simple.cfg" "${KLIPPER_CONFIG_PATH}/"
     print_msg "  Macros copied to $KLIPPER_CONFIG_PATH"
     print_msg "  Add this line to your printer.cfg to activate:"
-    print_msg "    [include belt_tuner_macros.cfg]"
-    print_msg "  (or belt_tuner_macros_simple.cfg if you don't have gcode_shell_command)"
+    print_msg "    [include belt_tuner_macros_simple.cfg]"
 }
 
 # ── 5. KlipperScreen panel ────────────────────────────────────────────────────
@@ -187,7 +185,7 @@ print_instructions() {
     echo "Next steps:"
     echo ""
     echo "  1. Add to printer.cfg:"
-    echo "       [include belt_tuner_macros.cfg]"
+    echo "       [include belt_tuner_macros_simple.cfg]"
     echo ""
     echo "  2. Restart Klipper:"
     echo "       sudo systemctl restart klipper"
