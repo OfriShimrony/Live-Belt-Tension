@@ -99,8 +99,8 @@ class Panel(ScreenPanel):
         self.compare_button.connect("clicked", self.show_comparison)
         action_box.pack_start(self.compare_button, False, False, 0)
         
-        clear_button = self._gtk.Button("clear-button", "Clear", "color2")
-        clear_button.set_size_request(100, 45)
+        clear_button = self._gtk.Button("clear-button", "Clear All", "color2")
+        clear_button.set_size_request(110, 45)
         clear_button.connect("clicked", self.clear_measurements)
         action_box.pack_start(clear_button, False, False, 0)
         
@@ -120,32 +120,33 @@ class Panel(ScreenPanel):
         self.update_measurements_display()
     
     def create_measurement_box(self, index):
-        """Create a single measurement display box"""
+        """Create a single measurement display box, tappable to clear that measurement."""
+        event_box = Gtk.EventBox()
+        event_box.connect("button-press-event", self.on_measurement_clicked, index)
+
         frame = Gtk.Frame()
         frame.set_size_request(100, 100)
-        
+
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
         box.set_halign(Gtk.Align.CENTER)
         box.set_valign(Gtk.Align.CENTER)
-        
-        # Frequency label
+
         freq_label = Gtk.Label()
         freq_label.set_name(f"measurement-freq-{index}")
         freq_label.set_markup("<span size='xx-large'>---</span>")
         box.pack_start(freq_label, False, False, 0)
-        
-        # Hz label
+
         unit_label = Gtk.Label(label="Hz")
         unit_label.set_name(f"measurement-unit-{index}")
         box.pack_start(unit_label, False, False, 0)
-        
-        # Quality indicator
+
         quality_label = Gtk.Label()
         quality_label.set_name(f"measurement-quality-{index}")
         box.pack_start(quality_label, False, False, 0)
-        
+
         frame.add(box)
-        return frame
+        event_box.add(frame)
+        return event_box
     
     def switch_belt(self, widget, belt):
         """Switch between Belt A and Belt B"""
@@ -170,11 +171,12 @@ class Panel(ScreenPanel):
         """Update the measurement boxes with current data"""
         measurements = self.measurements[self.current_belt]
         
-        for i, box_frame in enumerate(self.measurement_boxes):
-            box = box_frame.get_child()
+        for i, event_box in enumerate(self.measurement_boxes):
+            box_frame = event_box.get_child()   # EventBox → Frame
+            box = box_frame.get_child()          # Frame → Box
             freq_label = box.get_children()[0]
             quality_label = box.get_children()[2]
-            
+
             # Clear previous styling
             box_frame.get_style_context().remove_class("measurement-good")
             box_frame.get_style_context().remove_class("measurement-fair")
@@ -208,6 +210,7 @@ class Panel(ScreenPanel):
                     box_frame.get_style_context().add_class(style_class)
                 else:
                     box_frame.get_style_context().add_class("measurement-old")
+
             else:
                 freq_label.set_markup("<span size='xx-large'>---</span>")
                 quality_label.set_text("")
@@ -385,8 +388,39 @@ class Panel(ScreenPanel):
         self.belt_a_button.set_sensitive(True)
         self.belt_b_button.set_sensitive(True)
     
+    def on_measurement_clicked(self, widget, event, index):
+        """Tap on a measurement box — offer to clear that specific measurement."""
+        if self.measuring:
+            return
+        measurements = self.measurements[self.current_belt]
+        if index >= len(measurements):
+            return  # Empty slot, nothing to do
+
+        meas = measurements[index]
+        freq = meas['frequency']
+        q = meas['q_factor']
+
+        dialog = Gtk.MessageDialog(
+            transient_for=self._screen,
+            modal=True,
+            message_type=Gtk.MessageType.QUESTION,
+            buttons=Gtk.ButtonsType.NONE,
+            text=f"Measurement #{index + 1}: {freq:.1f} Hz  (Q={q:.0f})",
+        )
+        dialog.format_secondary_text("Remove this measurement?")
+        dialog.add_button("Clear", Gtk.ResponseType.YES)
+        dialog.add_button("Close", Gtk.ResponseType.CANCEL)
+
+        response = dialog.run()
+        dialog.destroy()
+
+        if response == Gtk.ResponseType.YES:
+            self.measurements[self.current_belt].pop(index)
+            self.update_measurements_display()
+            self.update_average_display()
+
     def clear_measurements(self, widget):
-        """Clear all measurements for current belt"""
+        """Clear all measurements for current belt."""
         self.measurements[self.current_belt] = []
         self.update_measurements_display()
         self.update_average_display()

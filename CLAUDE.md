@@ -2,6 +2,18 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Workflow Instructions
+
+**Before committing any code change, always ask:**
+> "Do you want to test this on the printer before committing?"
+
+SSH access to the printer is available via `plink` (PuTTY):
+- Host: `10.0.0.24`, user: `pi`
+- KlipperScreen panel lives at `~/KlipperScreen/panels/belt_tuner_panel.py`
+- After deploying: `sudo systemctl restart KlipperScreen`
+
+---
+
 ## Project Overview
 
 **Live Belt Tension** is a real-time belt frequency measurement tool for Klipper-based CoreXY 3D printers. It uses an ADXL345 accelerometer to analyze belt resonant frequency via FFT when the belt is physically plucked, like a guitar tuner.
