@@ -56,6 +56,12 @@ Then restart KlipperScreen:
 sudo systemctl restart KlipperScreen
 ```
 
+The panel has two modes:
+
+**Measure mode** — saves up to 5 results per belt, shows a running average with confidence rating. Use this for final verification. Tap any result box to remove that specific measurement, or use "Clear All".
+
+**Tune mode** — for active tensioning while turning the tensioner knob. Shows a single large frequency reading (color-coded by quality). If the other belt has already been measured, shows the live delta and a tighten/loosen hint. Results are not saved — tap "Again" to take another reading, or "Save & Exit" to record the result and return to Measure mode.
+
 ## How It Works
 
 1. The ADXL345 records acceleration data while you pluck the belt
