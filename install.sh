@@ -69,14 +69,28 @@ check_accelerometer() {
 
 install_dependencies() {
     print_msg "Installing Python dependencies (numpy, scipy)..."
+
+    # Klipper virtualenv
     if [ -f "${HOME}/klippy-env/bin/pip" ]; then
-        "${HOME}/klippy-env/bin/pip" install -q numpy scipy || {
-            print_warning "  pip install failed, falling back to apt..."
-            sudo apt-get install -y python3-numpy python3-scipy
-        }
-    else
-        sudo apt-get install -y python3-numpy python3-scipy
+        print_msg "  Installing into klippy-env..."
+        "${HOME}/klippy-env/bin/pip" install -q numpy scipy || \
+            print_warning "  klippy-env install failed, continuing..."
     fi
+
+    # KlipperScreen virtualenv (separate env, needs its own numpy/scipy)
+    for ks_env in "${HOME}/KlipperScreen/.venv" "${HOME}/.KlipperScreen-env"; do
+        if [ -f "${ks_env}/bin/pip" ]; then
+            print_msg "  Installing into KlipperScreen env (${ks_env})..."
+            "${ks_env}/bin/pip" install -q numpy scipy || \
+                print_warning "  KlipperScreen env install failed, continuing..."
+            break
+        fi
+    done
+
+    # System-level fallback
+    print_msg "  Installing system packages as fallback..."
+    sudo apt-get install -y python3-numpy python3-scipy 2>/dev/null || true
+
     print_msg "  Dependencies installed"
 }
 
