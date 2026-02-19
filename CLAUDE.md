@@ -2,6 +2,28 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Next Task (pick up here next session)
+
+**Build Mainsail web panel — Option 2: Moonraker component**
+
+Two files to create (on `debug` branch):
+1. `src/belt_tuner_moonraker.py` — Moonraker component, goes in `~/moonraker/moonraker/components/belt_tuner.py`
+   - Exposes: `POST /belt_tuner/measure {"belt": "A"}`, `GET /belt_tuner/status`, `POST /belt_tuner/clear`
+   - Triggers ADXL via `klippy_apis.run_gcode()`, waits 3.5s, runs V3 analyzer in `run_in_executor`
+   - Activated by adding `[belt_tuner]` to moonraker.conf
+2. `src/belt_tuner_web.html` — single-page frontend served from `~/mainsail/`
+   - Dark theme matching Mainsail, same Measure/Tune modes as KlipperScreen panel
+   - Calls Moonraker at `http://{hostname}:7125/belt_tuner/...`
+   - Embeds in Mainsail as a webcam/iframe panel
+
+**Before writing code:** SSH into printer and check:
+- `ls ~/moonraker/moonraker/components/ | head -20` (component structure)
+- `cat ~/printer_data/config/moonraker.conf` (current config)
+- `ls ~/mainsail/` (web root)
+- `cat /etc/nginx/sites-enabled/mainsail` (nginx config)
+
+---
+
 ## Workflow Instructions
 
 **Before committing any code change, always ask:**
