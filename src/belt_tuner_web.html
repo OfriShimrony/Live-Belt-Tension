@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Live Belt Tension</title>
+  <style>
+    :root {
+      --bg:          #12131a;
+      --surface:     #1e1f2b;
+      --surface2:    #252637;
+      --border:      #313244;
+      --text:        #cdd6f4;
+      --muted:       #6c7086;
+      --primary:     #89b4fa;
+      --green:       #a6e3a1;
+      --yellow:      #f9e2af;
+      --red:         #f38ba8;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: Roboto, 'Segoe UI', sans-serif;
+      font-size: 14px;
+      min-height: 100vh;
+    }
+
+    /* ── Header ──────────────────────────────────────────── */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    header h1 { font-size: 1.1rem; font-weight: 500; color: var(--primary); }
+    #conn-status { margin-left: auto; font-size: 0.78rem; color: var(--muted); }
+
+    /* ── Mode tabs ───────────────────────────────────────── */
+    .tabs {
+      display: flex;
+      gap: 6px;
+      padding: 10px 16px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+    }
+    .tab {
+      padding: 5px 14px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 0.85rem;
+      transition: all 0.15s;
+    }
+    .tab.active { background: var(--primary); color: #1e1e2e; border-color: var(--primary); font-weight: 600; }
+
+    /* ── Layout ──────────────────────────────────────────── */
+    .content { padding: 14px; max-width: 780px; margin: 0 auto; }
+    .hidden { display: none !important; }
+
+    /* ── Cards ───────────────────────────────────────────── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+    }
+    .card h2 { font-size: 0.95rem; font-weight: 600; color: var(--primary); margin-bottom: 10px; }
+
+    /* ── Measurement boxes ───────────────────────────────── */
+    .meas-grid {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-bottom: 8px;
+    }
+    .meas-box {
+      width: 66px;
+      height: 66px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: border-color 0.15s;
+      flex-shrink: 0;
+    }
+    .meas-box.empty    { opacity: 0.35; cursor: default; }
+    .meas-box.q-good   { border-color: var(--green); }
+    .meas-box.q-fair   { border-color: var(--yellow); }
+    .meas-box.q-poor   { border-color: var(--red); }
+    .meas-box:not(.empty):hover { filter: brightness(1.15); }
+
+    .mf  { font-size: 1.05rem; font-weight: 700; line-height: 1; }
+    .mu  { font-size: 0.6rem;  color: var(--muted); }
+    .mq  { font-size: 0.7rem;  }
+
+    /* ── Avg line ────────────────────────────────────────── */
+    .avg-line { font-size: 0.82rem; color: var(--muted); min-height: 1.3em; margin-bottom: 8px; }
+    .avg-line b { color: var(--text); font-size: 0.95rem; }
+
+    /* ── Buttons ─────────────────────────────────────────── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+      padding: 8px 14px;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      font-size: 0.88rem;
+      font-weight: 500;
+      transition: opacity 0.15s, transform 0.1s;
+      white-space: nowrap;
+    }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none !important; }
+    .btn:not(:disabled):active { transform: scale(0.96); }
+    .btn-primary   { background: var(--primary); color: #1e1e2e; }
+    .btn-secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+    .btn-green     { background: var(--green);   color: #1e1e2e; }
+    .btn-full      { width: 100%; }
+    .btn-sm        { padding: 6px 10px; font-size: 0.8rem; }
+
+    .row { display: flex; gap: 8px; align-items: stretch; }
+
+    /* ── Compare section ─────────────────────────────────── */
+    .compare-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .compare-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+    }
+    .compare-card h2 { font-size: 0.9rem; font-weight: 600; color: var(--primary); margin-bottom: 8px; }
+
+    .delta-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+      text-align: center;
+    }
+    .delta-num  { font-size: 2.6rem; font-weight: 700; line-height: 1; }
+    .delta-lbl  { font-size: 0.78rem; color: var(--muted); margin-top: 3px; }
+    .delta-rating { font-size: 1rem; font-weight: 600; margin-top: 8px; }
+    .belts-row  { display: flex; justify-content: space-around; margin-bottom: 8px; font-size: 0.88rem; }
+
+    /* ── Status bar ──────────────────────────────────────── */
+    .status-bar {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 9px 13px;
+      font-size: 0.85rem;
+      margin-top: 10px;
+    }
+    .progress-bar {
+      height: 3px;
+      background: var(--border);
+      border-radius: 2px;
+      overflow: hidden;
+      margin-top: 6px;
+    }
+    .progress-fill {
+      height: 100%;
+      background: var(--primary);
+      width: 0%;
+      border-radius: 2px;
+      transition: width 0.08s linear;
+    }
+
+    /* ── Tune mode ───────────────────────────────────────── */
+    .tune-wrap    { display: flex; flex-direction: column; gap: 10px; }
+    .belt-sel     { display: flex; gap: 8px; }
+    .belt-sel-btn {
+      flex: 1; padding: 9px; border-radius: 6px;
+      border: 2px solid var(--border);
+      background: var(--surface2); color: var(--muted);
+      cursor: pointer; font-size: 0.95rem; font-weight: 600;
+      transition: all 0.15s;
+    }
+    .belt-sel-btn.active { border-color: var(--primary); color: var(--primary); background: rgba(137,180,250,.1); }
+
+    .tune-display {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 28px 16px;
+      text-align: center;
+    }
+    .tune-freq    { font-size: 4rem; font-weight: 700; line-height: 1; transition: color 0.3s; }
+    .tune-unit    { font-size: 1.1rem; color: var(--muted); margin-top: 2px; }
+    .tune-quality { font-size: 0.85rem; color: var(--muted); margin-top: 6px; }
+    .tune-delta   {
+      display: inline-block;
+      margin-top: 10px;
+      padding: 6px 16px;
+      border-radius: 4px;
+      background: var(--surface2);
+      font-size: 0.9rem;
+      min-width: 180px;
+    }
+
+    /* ── Colours ─────────────────────────────────────────── */
+    .c-green  { color: var(--green); }
+    .c-yellow { color: var(--yellow); }
+    .c-red    { color: var(--red); }
+    .c-muted  { color: var(--muted); }
+  </style>
+</head>
+<body>
+
+<header>
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+  </svg>
+  <h1>Live Belt Tension</h1>
+  <span id="conn-status">connecting…</span>
+</header>
+
+<div class="tabs">
+  <button class="tab active" id="tab-measure" onclick="switchMode('measure')">Measure</button>
+  <button class="tab"        id="tab-tune"    onclick="switchMode('tune')">Tune Mode</button>
+</div>
+
+<div class="content">
+
+  <!-- ═══════════════════════════════════════ MEASURE MODE ═══ -->
+  <div id="mode-measure">
+
+    <div class="compare-grid">
+      <!-- Belt A -->
+      <div class="compare-card">
+        <h2>Belt A</h2>
+        <div class="meas-grid"  id="meas-A"></div>
+        <div class="avg-line"   id="avg-A"></div>
+        <div class="row">
+          <button class="btn btn-primary btn-full" id="mbtn-A" onclick="startMeasure('A')">Measure A</button>
+          <button class="btn btn-secondary btn-sm" onclick="clearBelt('A')" title="Clear Belt A">✕</button>
+        </div>
+      </div>
+
+      <!-- Belt B -->
+      <div class="compare-card">
+        <h2>Belt B</h2>
+        <div class="meas-grid"  id="meas-B"></div>
+        <div class="avg-line"   id="avg-B"></div>
+        <div class="row">
+          <button class="btn btn-primary btn-full" id="mbtn-B" onclick="startMeasure('B')">Measure B</button>
+          <button class="btn btn-secondary btn-sm" onclick="clearBelt('B')" title="Clear Belt B">✕</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Compare result -->
+    <div class="delta-box" id="compare-box">
+      <div class="c-muted" style="font-size:0.88rem">Measure both belts to compare</div>
+    </div>
+
+    <!-- Status (measure mode) -->
+    <div class="status-bar hidden" id="m-status">
+      <span id="m-status-text"></span>
+      <div class="progress-bar hidden" id="m-prog-bar">
+        <div class="progress-fill" id="m-prog-fill"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════ TUNE MODE ════════ -->
+  <div id="mode-tune" class="hidden tune-wrap">
+
+    <div class="belt-sel">
+      <button class="belt-sel-btn active" id="tsel-A" onclick="tuneBeltSelect('A')">Belt A</button>
+      <button class="belt-sel-btn"        id="tsel-B" onclick="tuneBeltSelect('B')">Belt B</button>
+    </div>
+
+    <div class="tune-display">
+      <div class="tune-freq"    id="t-freq">---</div>
+      <div class="tune-unit">Hz</div>
+      <div class="tune-quality" id="t-quality"></div>
+      <div class="tune-delta hidden c-muted" id="t-delta"></div>
+    </div>
+
+    <div class="status-bar" id="t-status">
+      <span id="t-status-text">Ready — click Measure to start</span>
+      <div class="progress-bar hidden" id="t-prog-bar">
+        <div class="progress-fill" id="t-prog-fill"></div>
+      </div>
+    </div>
+
+    <div class="row">
+      <button class="btn btn-primary btn-full" id="t-btn-meas"  onclick="startTuneMeasure()">Measure</button>
+      <button class="btn btn-secondary hidden" id="t-btn-again" onclick="startTuneMeasure()">Again</button>
+      <button class="btn btn-green    hidden" id="t-btn-save"  onclick="tuneSave()">Save &amp; Exit</button>
+    </div>
+  </div>
+
+</div><!-- /content -->
+
+<script>
+'use strict';
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+const MAX_MEAS      = 5;
+const REC_DURATION  = 3500; // ms — must match Moonraker component sleep
+
+// ─── State ───────────────────────────────────────────────────────────────────
+const S = {
+  meas:        { A: [], B: [] },
+  tuneBelt:    'A',
+  tuneResult:  null,
+  measuring:   false,
+  mode:        'measure',
+};
+
+// ─── Mode switching ───────────────────────────────────────────────────────────
+function switchMode(mode) {
+  S.mode = mode;
+  document.getElementById('tab-measure').classList.toggle('active', mode === 'measure');
+  document.getElementById('tab-tune').classList.toggle('active',   mode === 'tune');
+  document.getElementById('mode-measure').classList.toggle('hidden', mode !== 'measure');
+  document.getElementById('mode-tune').classList.toggle('hidden',   mode !== 'tune');
+}
+
+// ─── Measure mode rendering ───────────────────────────────────────────────────
+function renderBelt(belt) {
+  const list = S.meas[belt];
+  const grid = document.getElementById(`meas-${belt}`);
+  grid.innerHTML = '';
+
+  for (let i = 0; i < MAX_MEAS; i++) {
+    const m   = list[i];
+    const box = document.createElement('div');
+    box.className = 'meas-box';
+
+    if (!m) {
+      box.classList.add('empty');
+      box.innerHTML = `<span class="mf c-muted">---</span><span class="mu">Hz</span>`;
+    } else {
+      const q = m.q_factor;
+      box.classList.add(q > 20 ? 'q-good' : q > 10 ? 'q-fair' : 'q-poor');
+      box.title = `${m.frequency.toFixed(1)} Hz — click to remove`;
+      box.onclick = () => removeMeas(belt, i);
+      box.innerHTML = `
+        <span class="mf">${m.frequency.toFixed(1)}</span>
+        <span class="mu">Hz</span>
+        <span class="mq ${q > 20 ? 'c-green' : q > 10 ? 'c-yellow' : 'c-red'}">${
+          q > 50 ? '✓✓' : q > 20 ? '✓' : q > 10 ? '~' : '✗'
+        }</span>`;
+    }
+    grid.appendChild(box);
+  }
+
+  renderAvg(belt);
+  renderCompare();
+}
+
+function renderAvg(belt) {
+  const list = S.meas[belt];
+  const el   = document.getElementById(`avg-${belt}`);
+  if (!list.length) { el.innerHTML = ''; return; }
+  const avg = list.reduce((s, m) => s + m.frequency, 0) / list.length;
+  const hq  = list.filter(m => m.q_factor > 20).length;
+  const cls = hq >= list.length * 0.6 ? 'c-green' : 'c-yellow';
+  el.innerHTML = `Avg: <b>${avg.toFixed(1)} Hz</b> <span class="${cls}" style="font-size:.75rem">(${hq}/${list.length} high-Q)</span>`;
+}
+
+function renderCompare() {
+  const a = S.meas.A, b = S.meas.B;
+  const el = document.getElementById('compare-box');
+  if (!a.length || !b.length) {
+    el.innerHTML = `<div class="c-muted" style="font-size:.88rem">Measure both belts to compare</div>`;
+    return;
+  }
+  const avgA  = a.reduce((s, m) => s + m.frequency, 0) / a.length;
+  const avgB  = b.reduce((s, m) => s + m.frequency, 0) / b.length;
+  const delta = Math.abs(avgA - avgB);
+  let cls, label;
+  if      (delta < 2)  { cls = 'c-green';  label = '✓ EXCELLENT — belts matched'; }
+  else if (delta < 5)  { cls = 'c-green';  label = '✓ GOOD — acceptable match'; }
+  else if (delta < 10) { cls = 'c-yellow'; label = '⚠ FAIR — consider adjusting'; }
+  else                 { cls = 'c-red';    label = '✗ POOR — needs adjustment'; }
+
+  el.innerHTML = `
+    <div class="belts-row">
+      <div><span class="c-muted">A</span>  <b>${avgA.toFixed(1)} Hz</b></div>
+      <div><span class="c-muted">B</span>  <b>${avgB.toFixed(1)} Hz</b></div>
+    </div>
+    <div class="delta-num ${cls}">${delta.toFixed(1)} Hz</div>
+    <div class="delta-lbl">delta between belts</div>
+    <div class="delta-rating ${cls}">${label}</div>`;
+}
+
+function removeMeas(belt, idx) {
+  if (S.measuring) return;
+  S.meas[belt].splice(idx, 1);
+  renderBelt(belt);
+}
+
+function clearBelt(belt) {
+  if (S.measuring) return;
+  S.meas[belt] = [];
+  renderBelt(belt);
+}
+
+// ─── Progress bar helper ──────────────────────────────────────────────────────
+let _progTimer = null;
+
+function progStart(barId, fillId, duration) {
+  clearInterval(_progTimer);
+  const fill  = document.getElementById(fillId);
+  const bar   = document.getElementById(barId);
+  fill.style.width = '0%';
+  bar.classList.remove('hidden');
+  const t0 = Date.now();
+  _progTimer = setInterval(() => {
+    const pct = Math.min(100, (Date.now() - t0) / duration * 100);
+    fill.style.width = pct + '%';
+    if (pct >= 100) clearInterval(_progTimer);
+  }, 50);
+}
+
+function progStop(barId, fillId) {
+  clearInterval(_progTimer);
+  document.getElementById(fillId).style.width = '100%';
+  setTimeout(() => document.getElementById(barId).classList.add('hidden'), 400);
+}
+
+// ─── Measure mode — trigger measurement ──────────────────────────────────────
+async function startMeasure(belt) {
+  if (S.measuring) return;
+  if (S.meas[belt].length >= MAX_MEAS) {
+    alert(`Belt ${belt}: ${MAX_MEAS} measurements recorded. Clear some to continue.`);
+    return;
+  }
+  S.measuring = true;
+  setBtnsDisabled(true);
+
+  const statusBar  = document.getElementById('m-status');
+  const statusText = document.getElementById('m-status-text');
+  statusBar.classList.remove('hidden');
+  statusText.textContent = `Recording Belt ${belt} — pluck now!`;
+  progStart('m-prog-bar', 'm-prog-fill', REC_DURATION);
+
+  try {
+    const resp = await fetch('/server/belt_tuner/measure', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ belt }),
+      signal:  AbortSignal.timeout(20000),
+    });
+    const data   = await resp.json();
+    const result = data.result;
+    if (result && !result.error && result.frequency != null) {
+      S.meas[belt].push(result);
+      renderBelt(belt);
+      statusText.textContent = `Belt ${belt}: ${result.frequency.toFixed(1)} Hz  Q=${result.q_factor.toFixed(0)}  ${result.confidence}`;
+    } else {
+      statusText.textContent = `Error: ${result?.error ?? JSON.stringify(result)}`;
+    }
+  } catch (e) {
+    document.getElementById('m-status-text').textContent = `Error: ${e.message}`;
+  } finally {
+    progStop('m-prog-bar', 'm-prog-fill');
+    S.measuring = false;
+    setBtnsDisabled(false);
+  }
+}
+
+function setBtnsDisabled(dis) {
+  ['mbtn-A', 'mbtn-B'].forEach(id => { document.getElementById(id).disabled = dis; });
+}
+
+// ─── Tune mode ────────────────────────────────────────────────────────────────
+function tuneBeltSelect(belt) {
+  S.tuneBelt = belt;
+  document.getElementById('tsel-A').classList.toggle('active', belt === 'A');
+  document.getElementById('tsel-B').classList.toggle('active', belt === 'B');
+  resetTuneDisplay();
+}
+
+function resetTuneDisplay() {
+  document.getElementById('t-freq').textContent     = '---';
+  document.getElementById('t-freq').className       = 'tune-freq';
+  document.getElementById('t-quality').textContent  = '';
+  document.getElementById('t-delta').classList.add('hidden');
+  document.getElementById('t-btn-meas').classList.remove('hidden');
+  document.getElementById('t-btn-again').classList.add('hidden');
+  document.getElementById('t-btn-save').classList.add('hidden');
+  document.getElementById('t-status-text').textContent = 'Ready — click Measure to start';
+  S.tuneResult = null;
+}
+
+async function startTuneMeasure() {
+  if (S.measuring) return;
+  S.measuring = true;
+
+  const belt = S.tuneBelt;
+  document.getElementById('t-btn-meas').disabled  = true;
+  document.getElementById('t-btn-again').disabled = true;
+
+  const statusText = document.getElementById('t-status-text');
+  statusText.textContent = `Recording Belt ${belt} — pluck now!`;
+  progStart('t-prog-bar', 't-prog-fill', REC_DURATION);
+  document.getElementById('t-prog-bar').classList.remove('hidden');
+
+  try {
+    const resp = await fetch('/server/belt_tuner/measure', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ belt }),
+      signal:  AbortSignal.timeout(20000),
+    });
+    const data   = await resp.json();
+    const result = data.result;
+    if (result && !result.error && result.frequency != null) {
+      S.tuneResult = result;
+      showTuneResult(result, belt);
+    } else {
+      statusText.textContent = `Error: ${result?.error ?? JSON.stringify(result)}`;
+    }
+  } catch (e) {
+    statusText.textContent = `Error: ${e.message}`;
+  } finally {
+    progStop('t-prog-bar', 't-prog-fill');
+    S.measuring = false;
+    document.getElementById('t-btn-meas').disabled  = false;
+    document.getElementById('t-btn-again').disabled = false;
+  }
+}
+
+function showTuneResult(result, belt) {
+  const { frequency: freq, q_factor: q, confidence: conf } = result;
+  const freqEl = document.getElementById('t-freq');
+  freqEl.textContent = freq.toFixed(1);
+  freqEl.className   = 'tune-freq ' + (q > 20 ? 'c-green' : q > 10 ? 'c-yellow' : 'c-red');
+
+  document.getElementById('t-quality').textContent = `Q=${q.toFixed(0)}  ${conf}`;
+
+  // Delta vs other belt (using measure-mode averages)
+  const other     = belt === 'A' ? 'B' : 'A';
+  const otherMeas = S.meas[other];
+  const deltaEl   = document.getElementById('t-delta');
+  if (otherMeas.length) {
+    const otherAvg = otherMeas.reduce((s, m) => s + m.frequency, 0) / otherMeas.length;
+    const delta    = freq - otherAvg;
+    const absDelta = Math.abs(delta);
+    const arrow    = delta < 0 ? '↑ tighten' : '↓ loosen';
+    let cls, text;
+    if      (absDelta < 2)  { cls = 'c-green';  text = `Δ vs Belt ${other}: ${absDelta.toFixed(1)} Hz  ✓`; }
+    else if (absDelta < 5)  { cls = 'c-yellow'; text = `Δ vs Belt ${other}: ${absDelta.toFixed(1)} Hz  ${arrow}`; }
+    else                    { cls = 'c-red';    text = `Δ vs Belt ${other}: ${absDelta.toFixed(1)} Hz  ${arrow}`; }
+    deltaEl.className   = `tune-delta ${cls}`;
+    deltaEl.textContent = text;
+  } else {
+    deltaEl.className   = 'tune-delta c-muted';
+    deltaEl.textContent = `Measure Belt ${other} first to see delta`;
+  }
+  deltaEl.classList.remove('hidden');
+
+  document.getElementById('t-status-text').textContent = `${freq.toFixed(1)} Hz  —  ${conf}`;
+  document.getElementById('t-btn-meas').classList.add('hidden');
+  document.getElementById('t-btn-again').classList.remove('hidden');
+  document.getElementById('t-btn-save').classList.remove('hidden');
+}
+
+function tuneSave() {
+  if (S.tuneResult && S.meas[S.tuneBelt].length < MAX_MEAS) {
+    S.meas[S.tuneBelt].push(S.tuneResult);
+    renderBelt(S.tuneBelt);
+  }
+  switchMode('measure');
+  resetTuneDisplay();
+}
+
+// ─── Connection status ────────────────────────────────────────────────────────
+async function checkConn() {
+  const el = document.getElementById('conn-status');
+  try {
+    const r = await fetch('/server/belt_tuner/status', { signal: AbortSignal.timeout(3000) });
+    el.textContent   = r.ok ? 'connected' : 'error';
+    el.style.color   = r.ok ? 'var(--green)' : 'var(--red)';
+  } catch {
+    el.textContent = 'disconnected';
+    el.style.color = 'var(--red)';
+  }
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+renderBelt('A');
+renderBelt('B');
+checkConn();
+setInterval(checkConn, 15000);
+</script>
+</body>
+</html>
