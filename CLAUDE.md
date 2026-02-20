@@ -10,13 +10,24 @@ No pending tasks — Mainsail web panel is complete and working.
 
 ## Workflow Instructions
 
-**Before committing any code change, always ask:**
-> "Do you want to test this on the printer before committing?"
+### Branch strategy
+- All new features are developed on `debug` branch
+- **Fully test on the printer before merging to `main`**
+- `main` is the stable release branch — `install.sh` installs from `main`
+- When testing, always mention that we are testing, e.g. "deploying to printer for testing"
+- Only merge `debug` → `main` after confirming the feature works end-to-end on the printer
 
-SSH access to the printer is available via `plink` (PuTTY):
-- Host: `10.0.0.24`, user: `pi`
-- KlipperScreen panel lives at `~/KlipperScreen/panels/belt_tuner_panel.py`
-- After deploying: `sudo systemctl restart KlipperScreen`
+### Before committing
+**Always ask:** "Do you want to test this on the printer before committing?"
+
+### Deployment
+SSH access to the printer is available via `plink`/`pscp` (PuTTY):
+- Host: `10.0.0.24`, user: `pi`, password in memory file
+- Deploy files with `pscp`, then restart the relevant service:
+  - KlipperScreen panel → `~/KlipperScreen/panels/` → `sudo systemctl restart KlipperScreen`
+  - Moonraker component → `~/moonraker/moonraker/components/` → `sudo systemctl restart moonraker`
+  - Mainsail web panel → `~/mainsail/`  (no restart needed)
+- Use full path for systemctl in SSH: `sudo /bin/systemctl restart <service>`
 
 ---
 

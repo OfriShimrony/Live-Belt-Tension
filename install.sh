@@ -14,7 +14,9 @@ BELT_TUNER_PATH="${HOME}/Live-Belt-Tension"
 KLIPPER_PATH="${HOME}/klipper"
 KLIPPER_CONFIG_PATH="${HOME}/printer_data/config"
 KLIPPERSCREEN_PATH="${HOME}/KlipperScreen"
+MOONRAKER_PATH="${HOME}/moonraker"
 MOONRAKER_CONFIG="${KLIPPER_CONFIG_PATH}/moonraker.conf"
+MAINSAIL_PATH="${HOME}/mainsail"
 REPO_URL="https://github.com/OfriShimrony/Live-Belt-Tension.git"
 
 print_msg()     { echo -e "${GREEN}[Live Belt Tuner]${NC} $1"; }
@@ -75,6 +77,13 @@ install_dependencies() {
         print_msg "  Installing into klippy-env..."
         "${HOME}/klippy-env/bin/pip" install -q numpy scipy || \
             print_warning "  klippy-env install failed, continuing..."
+    fi
+
+    # Moonraker virtualenv
+    if [ -f "${HOME}/moonraker-env/bin/pip" ]; then
+        print_msg "  Installing into moonraker-env..."
+        "${HOME}/moonraker-env/bin/pip" install -q numpy scipy || \
+            print_warning "  moonraker-env install failed, continuing..."
     fi
 
     # KlipperScreen virtualenv (separate env, needs its own numpy/scipy)
@@ -155,7 +164,61 @@ install_klipperscreen_panel() {
     print_msg "    panel: belt_tuner_panel"
 }
 
-# ── 6. Moonraker update manager ───────────────────────────────────────────────
+# ── 6. Moonraker component ────────────────────────────────────────────────────
+
+install_moonraker_component() {
+    print_msg "Installing Moonraker belt_tuner component..."
+
+    local components_dir="${MOONRAKER_PATH}/moonraker/components"
+    if [ ! -d "$components_dir" ]; then
+        print_warning "  Moonraker components dir not found at $components_dir — skipping"
+        return
+    fi
+
+    if [ ! -f "${BELT_TUNER_PATH}/src/belt_tuner_moonraker.py" ]; then
+        print_warning "  belt_tuner_moonraker.py not found in repo — skipping component install"
+        return
+    fi
+
+    cp "${BELT_TUNER_PATH}/src/belt_tuner_moonraker.py" "${components_dir}/belt_tuner.py"
+    print_msg "  Component installed to $components_dir/belt_tuner.py"
+
+    # Add [belt_tuner] section to moonraker.conf if missing
+    if [ ! -f "$MOONRAKER_CONFIG" ]; then
+        print_warning "  moonraker.conf not found — skipping [belt_tuner] section"
+        return
+    fi
+
+    if grep -q "^\[belt_tuner\]" "$MOONRAKER_CONFIG"; then
+        print_msg "  [belt_tuner] already present in moonraker.conf"
+    else
+        echo -e "\n[belt_tuner]" >> "$MOONRAKER_CONFIG"
+        print_msg "  [belt_tuner] added to moonraker.conf"
+    fi
+}
+
+# ── 7. Mainsail web panel ─────────────────────────────────────────────────────
+
+install_mainsail_panel() {
+    print_msg "Installing Mainsail web panel..."
+
+    if [ ! -d "$MAINSAIL_PATH" ]; then
+        print_warning "  Mainsail not found at $MAINSAIL_PATH — skipping web panel install"
+        return
+    fi
+
+    if [ ! -f "${BELT_TUNER_PATH}/src/belt_tuner_web.html" ]; then
+        print_warning "  belt_tuner_web.html not found in repo — skipping web panel install"
+        return
+    fi
+
+    cp "${BELT_TUNER_PATH}/src/belt_tuner_web.html" "${MAINSAIL_PATH}/belt_tuner.html"
+    print_msg "  Web panel installed to $MAINSAIL_PATH/belt_tuner.html"
+    print_msg "  Access at: http://$(hostname -I | awk '{print $1}')/belt_tuner.html"
+    print_msg "  Tip: add it to Mainsail via Settings → Webcams → URL: /belt_tuner.html"
+}
+
+# ── 8. Moonraker update manager ───────────────────────────────────────────────
 
 add_moonraker_config() {
     print_msg "Configuring Moonraker update manager..."
@@ -180,7 +243,7 @@ EOF
     fi
 }
 
-# ── 7. Set permissions ────────────────────────────────────────────────────────
+# ── 9. Set permissions ────────────────────────────────────────────────────────
 
 set_permissions() {
     print_msg "Setting permissions..."
@@ -188,7 +251,7 @@ set_permissions() {
     print_msg "  Done"
 }
 
-# ── 8. Summary ────────────────────────────────────────────────────────────────
+# ── 10. Summary ───────────────────────────────────────────────────────────────
 
 print_instructions() {
     echo ""
@@ -201,14 +264,20 @@ print_instructions() {
     echo "  1. Add to printer.cfg:"
     echo "       [include belt_tuner_macros_simple.cfg]"
     echo ""
-    echo "  2. Restart Klipper:"
+    echo "  2. Restart services:"
     echo "       sudo systemctl restart klipper"
+    echo "       sudo systemctl restart moonraker"
+    echo "       sudo systemctl restart KlipperScreen   # if installed"
     echo ""
-    echo "  3. If you installed the KlipperScreen panel, restart KlipperScreen:"
-    echo "       sudo systemctl restart KlipperScreen"
+    echo "  3. Mainsail web panel:"
+    echo "       Open: http://$(hostname -I | awk '{print $1}')/belt_tuner.html"
+    echo "       Or embed via Mainsail → Settings → Webcams → Add webcam"
+    echo "         URL: /belt_tuner.html"
     echo ""
-    echo "  4. Test the analyzer directly:"
-    echo "       python3 ~/Live-Belt-Tension/src/belt_analyzer_v3.py <csv_file>"
+    echo "  4. KlipperScreen panel — add to KlipperScreen config:"
+    echo "       [menu __main belt_tuner]"
+    echo "       name: Belt Tuner"
+    echo "       panel: belt_tuner_panel"
     echo ""
     echo "  5. From the Klipper console:"
     echo "       BELT_TUNE BELT=A"
@@ -236,6 +305,8 @@ main() {
     set_permissions
     install_macros
     install_klipperscreen_panel
+    install_moonraker_component
+    install_mainsail_panel
     add_moonraker_config
 
     print_instructions
