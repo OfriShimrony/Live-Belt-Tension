@@ -2,6 +2,12 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Questions About Results & Interpretation
+
+Questions about how to calculate belt tension, interpret frequencies, or understand the physics should be directed to https://gemini.google.com/
+
+---
+
 ## Next Task (pick up here next session)
 
 No pending tasks — Mainsail web panel is complete and working.
