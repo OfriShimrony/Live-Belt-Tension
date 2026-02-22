@@ -10,7 +10,33 @@ Questions about how to calculate belt tension, interpret frequencies, or underst
 
 ## Next Task (pick up here next session)
 
-No pending tasks — Mainsail web panel is complete and working.
+**Motion-based belt scanning (debug branch) — pick up mid-implementation**
+
+Goal: Use printer movement + ADXL to measure belt frequency in real-time while user adjusts tension.
+
+### Architecture
+- **Phase 1 (Scan)**: `TEST_RESONANCES AXIS=1,1` (Belt A) and `AXIS=1,-1` (Belt B), 85–140 Hz, HZ_PER_SEC=2 (~27s each).
+- **Phase 2 (Watch)**: Same but ±10 Hz around found frequency (~10s). Loops automatically.
+- Measurement at probe_points (175, 175, 20) — already in cartographer.cfg.
+- Belt isolation: AXIS=1,1 → Belt A. AXIS=1,-1 → Belt B.
+- Output CSV: `/tmp/raw_data_belt_{a|b}_{timestamp}.csv`
+
+### What's done
+- `src/belt_sweep_analyzer.py` ✅ — analyzes TEST_RESONANCES raw CSV, returns same dict shape as V3
+
+### What's left to write
+1. `src/belt_tuner_moonraker.py` — add `POST /server/belt_tuner/motion_measure {"belt":"A","freq_min":85,"freq_max":140}`
+   - `run_gcode("TEST_RESONANCES AXIS=1,1 OUTPUT=raw_data NAME=belt_a FREQ_START=85 FREQ_END=140 HZ_PER_SEC=2")`
+   - Find newest `/tmp/raw_data_belt_a_*.csv`, run belt_sweep_analyzer in executor, return result
+2. `src/belt_tuner_panel.py` — add "Scan" mode (3rd tab)
+   - "Scan A" / "Scan B" → single shot. "Watch A" / "Watch B" → looping narrow range.
+   - Background thread calls `http://localhost:7125/server/belt_tuner/motion_measure` with requests lib (timeout=60s)
+   - Watch loop: first call full range, then ±10Hz around last result
+
+### Key printer facts
+- 350×350, probe_points already at 175,175,20 (cartographer.cfg)
+- No gcode_shell_command — all via Moonraker component
+- Input shaper: MZV x=59.2Hz y=40.6Hz (no need to disable for sweep approach)
 
 ---
 
