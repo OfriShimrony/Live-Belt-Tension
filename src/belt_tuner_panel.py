@@ -1,8 +1,10 @@
 import gi
+import json
 import logging
 import os
 import threading
 import time
+import urllib.request
 
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, GLib
@@ -33,6 +35,15 @@ class Panel(ScreenPanel):
         self.measurement_thread = None
         self.tune_mode = False
         self.last_tune_result = None
+        self.scan_mode = False
+        self.scan_thread = None
+        self.scan_stop_event = threading.Event()
+        self.scan_watching = False
+        self.watch_belt = None
+        self.last_watch_freq = None
+        self.dynamic_thread = None
+        self.dynamic_stop_event = threading.Event()
+        self.dynamic_poll_timer = None
 
         # ── Main container ────────────────────────────────────────────────────
         main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
@@ -63,6 +74,11 @@ class Panel(ScreenPanel):
         self.tune_button.set_size_request(120, 55)
         self.tune_button.connect("clicked", self.toggle_tune_mode)
         header_box.pack_start(self.tune_button, False, False, 0)
+
+        self.scan_button = self._gtk.Button("scan-mode-button", "Scan", "color4")
+        self.scan_button.set_size_request(80, 55)
+        self.scan_button.connect("clicked", self.toggle_scan_mode)
+        header_box.pack_start(self.scan_button, False, False, 0)
 
         main_box.pack_start(header_box, False, False, 0)
 
@@ -115,6 +131,37 @@ class Panel(ScreenPanel):
         main_box.pack_start(self.tune_widget, True, True, 0)
         self.tune_widget.hide()
 
+        # ── SCAN MODE: large display ───────────────────────────────────────────
+        self.scan_widget = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
+
+        scan_frame = Gtk.Frame()
+        scan_frame.set_size_request(-1, 90)
+
+        scan_inner = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
+        scan_inner.set_halign(Gtk.Align.CENTER)
+        scan_inner.set_valign(Gtk.Align.CENTER)
+        scan_inner.set_margin_top(8)
+        scan_inner.set_margin_bottom(8)
+
+        self.scan_freq_label = Gtk.Label()
+        self.scan_freq_label.set_markup("<span size='xxx-large'>---</span>")
+        scan_inner.pack_start(self.scan_freq_label, False, False, 0)
+
+        scan_hz_label = Gtk.Label(label="Hz")
+        scan_hz_label.set_name("belt-tuner-label")
+        scan_inner.pack_start(scan_hz_label, False, False, 0)
+
+        self.scan_quality_label = Gtk.Label()
+        scan_inner.pack_start(self.scan_quality_label, False, False, 0)
+
+        self.scan_belt_label = Gtk.Label()
+        scan_inner.pack_start(self.scan_belt_label, False, False, 0)
+
+        scan_frame.add(scan_inner)
+        self.scan_widget.pack_start(scan_frame, False, False, 0)
+        main_box.pack_start(self.scan_widget, False, False, 0)
+        self.scan_widget.hide()
+
         # ── Shared: status + average + start button ───────────────────────────
         self.status_label = Gtk.Label()
         self.status_label.set_name("belt-tuner-status")
@@ -165,6 +212,74 @@ class Panel(ScreenPanel):
         main_box.pack_start(self.tune_actions, False, False, 5)
         self.tune_actions.hide()
 
+        # ── SCAN MODE action buttons ───────────────────────────────────────────
+        self.scan_actions = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
+        self.scan_actions.set_halign(Gtk.Align.CENTER)
+
+        scan_row1 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        scan_row1.set_halign(Gtk.Align.CENTER)
+
+        scan_a_button = self._gtk.Button("scan-a-button", "Scan A", "color1")
+        scan_a_button.set_size_request(90, 36)
+        scan_a_button.connect("clicked", self.start_scan, 'A')
+        scan_row1.pack_start(scan_a_button, False, False, 0)
+
+        scan_b_button = self._gtk.Button("scan-b-button", "Scan B", "color2")
+        scan_b_button.set_size_request(90, 36)
+        scan_b_button.connect("clicked", self.start_scan, 'B')
+        scan_row1.pack_start(scan_b_button, False, False, 0)
+
+        self.watch_a_button = self._gtk.Button("watch-a-button", "Watch A", "color3")
+        self.watch_a_button.set_size_request(90, 36)
+        self.watch_a_button.connect("clicked", self.start_watch, 'A')
+        scan_row1.pack_start(self.watch_a_button, False, False, 0)
+
+        self.watch_b_button = self._gtk.Button("watch-b-button", "Watch B", "color4")
+        self.watch_b_button.set_size_request(90, 36)
+        self.watch_b_button.connect("clicked", self.start_watch, 'B')
+        scan_row1.pack_start(self.watch_b_button, False, False, 0)
+
+        self.scan_row1 = scan_row1
+        self.scan_actions.pack_start(scan_row1, False, False, 0)
+
+        # Watch mode row: [Scan Again] [Stop] — replaces scan_row1 during watch
+        self.scan_watch_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        self.scan_watch_row.set_halign(Gtk.Align.CENTER)
+
+        self.scan_again_button = self._gtk.Button("scan-again-button", "Scan Again", "color3")
+        self.scan_again_button.set_size_request(150, 36)
+        self.scan_again_button.connect("clicked", self.scan_again)
+        self.scan_watch_row.pack_start(self.scan_again_button, False, False, 0)
+        self.scan_again_button.hide()
+
+        self.scan_stop_button = self._gtk.Button("scan-stop-button", "Stop", "color2")
+        self.scan_stop_button.set_size_request(100, 36)
+        self.scan_stop_button.connect("clicked", self.stop_scan)
+        self.scan_watch_row.pack_start(self.scan_stop_button, False, False, 0)
+
+        self.scan_actions.pack_start(self.scan_watch_row, False, False, 0)
+        self.scan_watch_row.hide()
+
+        # Dynamic scan row: [Dyn A] [Dyn B]
+        scan_row2 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        scan_row2.set_halign(Gtk.Align.CENTER)
+
+        dyn_a_button = self._gtk.Button("dyn-a-button", "Dyn A", "color1")
+        dyn_a_button.set_size_request(110, 36)
+        dyn_a_button.connect("clicked", self.start_dynamic_scan, 'A')
+        scan_row2.pack_start(dyn_a_button, False, False, 0)
+
+        dyn_b_button = self._gtk.Button("dyn-b-button", "Dyn B", "color2")
+        dyn_b_button.set_size_request(110, 36)
+        dyn_b_button.connect("clicked", self.start_dynamic_scan, 'B')
+        scan_row2.pack_start(dyn_b_button, False, False, 0)
+
+        self.scan_row2 = scan_row2
+        self.scan_actions.pack_start(scan_row2, False, False, 0)
+
+        main_box.pack_start(self.scan_actions, False, False, 5)
+        self.scan_actions.hide()
+
         # ── Info label ────────────────────────────────────────────────────────
         self.info_label = Gtk.Label()
         self.info_label.set_markup("<small>Recommendation: Take 3-5 measurements for accuracy</small>")
@@ -211,7 +326,7 @@ class Panel(ScreenPanel):
     # ── Belt selection ────────────────────────────────────────────────────────
 
     def switch_belt(self, widget, belt):
-        if self.measuring:
+        if self.measuring or self.scan_mode:
             return
         self.current_belt = belt
         self.update_belt_selection()
@@ -232,7 +347,7 @@ class Panel(ScreenPanel):
     # ── Tune mode toggle ──────────────────────────────────────────────────────
 
     def toggle_tune_mode(self, widget):
-        if self.measuring:
+        if self.measuring or self.scan_mode:
             return
         self.tune_mode = not self.tune_mode
         if self.tune_mode:
@@ -317,6 +432,318 @@ class Panel(ScreenPanel):
         if self.last_tune_result:
             self.measurements[self.current_belt].append(self.last_tune_result)
         self.toggle_tune_mode(widget)
+
+    # ── Scan mode toggle ──────────────────────────────────────────────────────
+
+    def toggle_scan_mode(self, widget):
+        if self.measuring or (self.scan_thread and self.scan_thread.is_alive()):
+            return
+        self.scan_mode = not self.scan_mode
+        if self.scan_mode:
+            # Exit tune mode if active
+            self.tune_mode = False
+            self.tune_widget.hide()
+            self.tune_actions.hide()
+            self.tune_button.get_style_context().remove_class("button_active")
+            self.measure_widget.hide()
+            self.measure_actions.hide()
+            self.average_label.hide()
+            self.info_label.hide()
+            self.start_button.hide()
+            self.scan_widget.show()
+            self.scan_actions.show()
+            self.scan_button.get_style_context().add_class("button_active")
+            self._reset_scan_display()
+            self.update_status("<big>Scan Mode — Ready</big>")
+        else:
+            self.scan_stop_event.set()
+            self.dynamic_stop_event.set()
+            if self.dynamic_poll_timer is not None:
+                GLib.source_remove(self.dynamic_poll_timer)
+                self.dynamic_poll_timer = None
+            self.scan_widget.hide()
+            self.scan_actions.hide()
+            self.scan_watch_row.hide()
+            self.scan_again_button.hide()
+            self.measure_widget.show()
+            self.measure_actions.show()
+            self.average_label.show()
+            self.info_label.show()
+            self.start_button.show()
+            self.scan_button.get_style_context().remove_class("button_active")
+            self.scan_watching = False
+            self.update_status("<big>Ready</big>")
+            self.update_measurements_display()
+            self.update_average_display()
+
+    def _reset_scan_display(self):
+        self.scan_freq_label.set_markup("<span size='xxx-large'>---</span>")
+        self.scan_quality_label.set_text("")
+        self.scan_belt_label.set_text("")
+        self.scan_row1.show()
+        self.scan_row2.show()
+        self.scan_watch_row.hide()
+
+    # ── Scan mode actions ─────────────────────────────────────────────────────
+
+    def start_scan(self, widget, belt):
+        if self.scan_thread and self.scan_thread.is_alive():
+            return
+        self.scan_stop_event.clear()
+        self.scan_watching = False
+        self._set_scan_idle_buttons_sensitive(False)
+        self.update_status(f"<big>Scanning Belt {belt}…</big>")
+        self.scan_belt_label.set_markup(f"<small>Belt {belt}</small>")
+        self.scan_thread = threading.Thread(
+            target=self._scan_worker, args=(belt, 85.0, 140.0), daemon=True
+        )
+        self.scan_thread.start()
+
+    def start_watch(self, widget, belt):
+        if self.scan_thread and self.scan_thread.is_alive():
+            return
+        self.scan_stop_event.clear()
+        self.scan_watching = True
+        self.watch_belt = belt
+        self.last_watch_freq = None
+        self._set_scan_idle_buttons_sensitive(False)
+        self.scan_row1.hide()
+        self.scan_row2.hide()
+        self.scan_again_button.hide()
+        self.scan_watch_row.show()
+        self.update_status(f"<big>Watch Belt {belt} — Scanning…</big>")
+        self.scan_belt_label.set_markup(f"<small>Belt {belt} · Watch</small>")
+        self.scan_thread = threading.Thread(
+            target=self._watch_worker, args=(belt, 85.0, 140.0), daemon=True
+        )
+        self.scan_thread.start()
+
+    def scan_again(self, widget):
+        if self.scan_thread and self.scan_thread.is_alive():
+            return
+        belt = self.watch_belt
+        if self.last_watch_freq:
+            freq_min = max(85.0, self.last_watch_freq - 10.0)
+            freq_max = min(140.0, self.last_watch_freq + 10.0)
+        else:
+            freq_min, freq_max = 85.0, 140.0
+        self.scan_stop_event.clear()
+        self.scan_again_button.hide()
+        self.scan_stop_button.set_sensitive(True)
+        self.update_status(f"<big>Watch Belt {belt} — Scanning…</big>")
+        self.scan_thread = threading.Thread(
+            target=self._watch_worker, args=(belt, freq_min, freq_max), daemon=True
+        )
+        self.scan_thread.start()
+
+    def stop_scan(self, widget):
+        self.scan_stop_event.set()
+        if not (self.scan_thread and self.scan_thread.is_alive()):
+            self._scan_done()
+        else:
+            self.update_status("<big>Stopping…</big>")
+
+    def _set_scan_idle_buttons_sensitive(self, sensitive):
+        for btn in self.scan_row1.get_children():
+            btn.set_sensitive(sensitive)
+        for btn in self.scan_row2.get_children():
+            btn.set_sensitive(sensitive)
+        self.belt_a_button.set_sensitive(sensitive)
+        self.belt_b_button.set_sensitive(sensitive)
+        self.tune_button.set_sensitive(sensitive)
+        self.scan_button.set_sensitive(sensitive)
+
+    # ── Scan workers ──────────────────────────────────────────────────────────
+
+    def _call_motion_measure(self, belt, freq_min, freq_max):
+        url = "http://localhost:7125/server/belt_tuner/motion_measure"
+        payload = json.dumps({
+            "belt": belt, "freq_min": freq_min, "freq_max": freq_max
+        }).encode()
+        req = urllib.request.Request(
+            url, data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST"
+        )
+        timeout = int((freq_max - freq_min) / 2.0 + 20)
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                data = json.loads(resp.read())
+                return data.get("result", data)
+        except Exception as e:
+            return {"error": str(e), "frequency": None, "confidence": None, "q_factor": None}
+
+    def _scan_worker(self, belt, freq_min, freq_max):
+        """Single-shot scan (Scan A / Scan B buttons)."""
+        result = self._call_motion_measure(belt, freq_min, freq_max)
+        if self.scan_stop_event.is_set():
+            GLib.idle_add(self._scan_done)
+            return
+        if result.get("error") or not result.get("frequency"):
+            GLib.idle_add(self._scan_error, result.get("error", "No frequency found"))
+        else:
+            GLib.idle_add(self._scan_result, result, belt)
+
+    def _watch_worker(self, belt, freq_min, freq_max):
+        """Single-shot watch scan — result shown, then waits for user to press Scan Again."""
+        result = self._call_motion_measure(belt, freq_min, freq_max)
+        if self.scan_stop_event.is_set():
+            GLib.idle_add(self._scan_done)
+            return
+        if result.get("error") or not result.get("frequency"):
+            GLib.idle_add(self._watch_error, result.get("error", "No frequency found"))
+        else:
+            GLib.idle_add(self._watch_result, result, belt)
+
+    # ── Dynamic scan (multi-position) ────────────────────────────────────────
+
+    def start_dynamic_scan(self, widget, belt):
+        if (self.scan_thread and self.scan_thread.is_alive()) or \
+           (self.dynamic_thread and self.dynamic_thread.is_alive()):
+            return
+        self.dynamic_stop_event.clear()
+        self._set_scan_idle_buttons_sensitive(False)
+        self.scan_row1.hide()
+        self.scan_row2.hide()
+        self.scan_watch_row.show()
+        self.scan_again_button.hide()
+        self.scan_stop_button.set_sensitive(True)
+        self.update_status(f"<big>Dynamic scan Belt {belt} — pos 1/3…</big>")
+        self.scan_belt_label.set_markup(f"<small>Belt {belt} · Dynamic</small>")
+        # Start progress polling every 5 s
+        self.dynamic_poll_timer = GLib.timeout_add(5000, self._poll_dynamic_status, belt)
+        self.dynamic_thread = threading.Thread(
+            target=self._dynamic_scan_worker, args=(belt,), daemon=True
+        )
+        self.dynamic_thread.start()
+
+    def _dynamic_scan_worker(self, belt):
+        """Background thread — POST motion_measure_dynamic, wait up to 180 s."""
+        url = "http://localhost:7125/server/belt_tuner/motion_measure_dynamic"
+        payload = json.dumps({"belt": belt}).encode()
+        req = urllib.request.Request(
+            url, data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST"
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=180) as resp:
+                data = json.loads(resp.read())
+                result = data.get("result", data)
+        except Exception as e:
+            result = {"error": str(e), "frequency": None, "confidence": None, "q_factor": None}
+
+        if self.dynamic_stop_event.is_set():
+            GLib.idle_add(self._scan_done)
+            return
+
+        if result.get("error") or not result.get("frequency"):
+            GLib.idle_add(self._scan_error, result.get("error", "No frequency found"))
+        else:
+            GLib.idle_add(self._dynamic_result, result, belt)
+
+    def _poll_dynamic_status(self, belt):
+        """Called every 5 s by GLib.timeout_add while dynamic scan runs."""
+        if not (self.dynamic_thread and self.dynamic_thread.is_alive()):
+            return False  # cancel timer
+        try:
+            with urllib.request.urlopen(
+                "http://localhost:7125/server/belt_tuner/status", timeout=3
+            ) as resp:
+                data = json.loads(resp.read())
+                result_data = data.get("result", data)
+                progress = result_data.get("dyn_progress")
+                if progress:
+                    self.update_status(
+                        f"<big>Dynamic scan Belt {belt} — pos {progress}…</big>"
+                    )
+        except Exception:
+            pass
+        return True  # keep polling
+
+    def _dynamic_result(self, result, belt):
+        """GTK main thread — display dynamic scan result."""
+        # Cancel progress poll timer
+        if self.dynamic_poll_timer is not None:
+            GLib.source_remove(self.dynamic_poll_timer)
+            self.dynamic_poll_timer = None
+
+        freq = result['frequency']
+        snr = result.get('q_factor') or result.get('snr') or 0
+        conf = result.get('confidence', '?')
+        mobility = result.get('peak_mobility', 0)
+        classification = result.get('classification', '?')
+
+        self.scan_freq_label.set_markup(
+            f"<span size='xxx-large' color='{self._freq_color(snr)}'><b>{freq:.1f}</b></span>"
+        )
+        self.scan_quality_label.set_markup(
+            f"<small>SNR={snr:.0f}  ({conf})  shift={mobility:.1f}Hz</small>"
+        )
+        self.scan_belt_label.set_markup(
+            f"<small>Belt {belt} · Dynamic · {classification}</small>"
+        )
+        self.update_status(
+            f"<big>Belt {belt}: <b>{freq:.1f} Hz</b></big>  "
+            f"<small>{conf}  {classification}</small>"
+        )
+        self._scan_done()
+
+    # ── Callbacks (GTK main thread) ───────────────────────────────────────────
+
+    def _freq_color(self, snr):
+        if snr > 15:
+            return "#00CC00"
+        elif snr > 7:
+            return "#FFAA00"
+        return "#FF4444"
+
+    def _scan_result(self, result, belt):
+        freq = result['frequency']
+        snr = result.get('q_factor') or result.get('snr') or 0
+        conf = result.get('confidence', '?')
+        self.scan_freq_label.set_markup(
+            f"<span size='xxx-large' color='{self._freq_color(snr)}'><b>{freq:.1f}</b></span>"
+        )
+        self.scan_quality_label.set_markup(f"<small>SNR={snr:.0f}  ({conf})</small>")
+        self.scan_belt_label.set_markup(f"<small>Belt {belt}</small>")
+        self.update_status(f"<big>Belt {belt}: <b>{freq:.1f} Hz</b></big>  <small>{conf}</small>")
+        self._scan_done()
+
+    def _watch_result(self, result, belt):
+        freq = result['frequency']
+        snr = result.get('q_factor') or result.get('snr') or 0
+        conf = result.get('confidence', '?')
+        self.last_watch_freq = freq
+        self.scan_freq_label.set_markup(
+            f"<span size='xxx-large' color='{self._freq_color(snr)}'><b>{freq:.1f}</b></span>"
+        )
+        self.scan_quality_label.set_markup(f"<small>SNR={snr:.0f}  ({conf})</small>")
+        self.scan_belt_label.set_markup(f"<small>Belt {belt} · Watch</small>")
+        self.update_status(f"<big>Belt {belt}: <b>{freq:.1f} Hz</b></big>  <small>adjust &amp; press Scan Again</small>")
+        self.scan_again_button.show()
+        self.scan_stop_button.set_sensitive(True)
+
+    def _scan_error(self, error):
+        self.update_status(f"<span color='red'>Error: {error}</span>")
+        self._scan_done()
+
+    def _watch_error(self, error):
+        self.update_status(f"<span color='orange'>Error: {error}</span>")
+        # Show Scan Again so user can retry
+        self.scan_again_button.show()
+        self.scan_stop_button.set_sensitive(True)
+
+    def _scan_done(self):
+        self.scan_watching = False
+        self.watch_belt = None
+        self.last_watch_freq = None
+        self.scan_stop_event.clear()
+        self._set_scan_idle_buttons_sensitive(True)
+        self.scan_watch_row.hide()
+        self.scan_again_button.hide()
+        self.scan_row1.show()
+        self.scan_row2.show()
 
     # ── Measure mode display ──────────────────────────────────────────────────
 
@@ -514,6 +941,7 @@ class Panel(ScreenPanel):
         self.belt_a_button.set_sensitive(True)
         self.belt_b_button.set_sensitive(True)
         self.tune_button.set_sensitive(True)
+        self.scan_button.set_sensitive(True)
 
     def on_measurement_clicked(self, widget, event, index):
         """Tap a measurement box to clear that specific measurement."""

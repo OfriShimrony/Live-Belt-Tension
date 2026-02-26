@@ -2,6 +2,12 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## File Editing
+- When asked to edit CLAUDE.md, edit CLAUDE.md — not README.md
+- This is a Python project targeting KlipperScreen and Moonraker on a 3D printer
+- Primary language: Python. UI: KlipperScreen (GTK) and Mainsail (web panel)
+- Target environment: Raspberry Pi running Klipper with KlipperScreen venv
+
 ## Questions About Results & Interpretation
 
 Questions about how to calculate belt tension, interpret frequencies, or understand the physics should be directed to https://gemini.google.com/
@@ -10,33 +16,27 @@ Questions about how to calculate belt tension, interpret frequencies, or underst
 
 ## Next Task (pick up here next session)
 
-**Motion-based belt scanning (debug branch) — pick up mid-implementation**
+**Calibration update for Belt A** — `calibration_a` in moonraker.conf is now stale.
 
-Goal: Use printer movement + ADXL to measure belt frequency in real-time while user adjusts tension.
+Current tuner readings at Y=100: Belt A ≈ 104.5 Hz, Belt B ≈ 108 Hz.
+Multi-position dynamic scan results: Belt A = 109.3 Hz (off by 4.8 Hz), Belt B = 108.8 Hz (accurate).
 
-### Architecture
-- **Phase 1 (Scan)**: `TEST_RESONANCES AXIS=1,1` (Belt A) and `AXIS=1,-1` (Belt B), 85–140 Hz, HZ_PER_SEC=2 (~27s each).
-- **Phase 2 (Watch)**: Same but ±10 Hz around found frequency (~10s). Loops automatically.
-- Measurement at probe_points (175, 175, 20) — already in cartographer.cfg.
-- Belt isolation: AXIS=1,1 → Belt A. AXIS=1,-1 → Belt B.
-- Output CSV: `/tmp/raw_data_belt_{a|b}_{timestamp}.csv`
+Root cause: the algorithm searches near the calibration-expected frequency (stored as 110 Hz for Belt A at Y=100), but belt A is now at 104.5 Hz. Need to re-measure Belt A with guitar tuner at Y=80, 100, 120 and update `calibration_a` in moonraker.conf.
 
-### What's done
-- `src/belt_sweep_analyzer.py` ✅ — analyzes TEST_RESONANCES raw CSV, returns same dict shape as V3
+---
 
-### What's left to write
-1. `src/belt_tuner_moonraker.py` — add `POST /server/belt_tuner/motion_measure {"belt":"A","freq_min":85,"freq_max":140}`
-   - `run_gcode("TEST_RESONANCES AXIS=1,1 OUTPUT=raw_data NAME=belt_a FREQ_START=85 FREQ_END=140 HZ_PER_SEC=2")`
-   - Find newest `/tmp/raw_data_belt_a_*.csv`, run belt_sweep_analyzer in executor, return result
-2. `src/belt_tuner_panel.py` — add "Scan" mode (3rd tab)
-   - "Scan A" / "Scan B" → single shot. "Watch A" / "Watch B" → looping narrow range.
-   - Background thread calls `http://localhost:7125/server/belt_tuner/motion_measure` with requests lib (timeout=60s)
-   - Watch loop: first call full range, then ±10Hz around last result
+## Testing Protocol
 
-### Key printer facts
-- 350×350, probe_points already at 175,175,20 (cartographer.cfg)
-- No gcode_shell_command — all via Moonraker component
-- Input shaper: MZV x=59.2Hz y=40.6Hz (no need to disable for sweep approach)
+After any code changes to frequency detection algorithms, run the measurement against a known reference (guitar tuner) and compare Belt A and Belt B readings. Log the Hz delta for both belts before committing.
+
+---
+
+## Install Script Rules
+
+- Always test install/uninstall scripts on the actual Klipper environment (SSH to printer) before committing
+- Ensure numpy and other Python dependencies are installed in the KlipperScreen venv, not system Python
+- Validate gcode_shell_command config syntax before pushing
+- Never silently fail — all install script errors must be surfaced to the user
 
 ---
 
@@ -159,8 +159,6 @@ sudo systemctl restart klipper         # for macro changes (after editing .cfg)
 ```
 
 ## Active Issues
-
-**~5Hz frequency discrepancy** — V3 reports different frequencies than manual tuner apps in some tests. Suspected cause: test CSV files may not match what was tested live. Next step: upload raw CSV and compare output to a manual guitar tuner app on the same file.
 
 **`analyze_pluck_v3` alias** — `belt_tuner_panel.py` imports `analyze_pluck_v3` from `belt_analyzer_v3`, but V3 only defines `analyze_pluck_event`. A workaround alias `analyze_pluck_v3 = analyze_pluck_event` was added to the printer's copy. Ensure the repo version includes this alias.
 
